@@ -78,7 +78,10 @@ wire AnalogClock;
 // analog update divided clock
 always @ (posedge clock) 
 begin
-	count <= count + 1; 
+	if (reset == 0) //reset active
+		count <= 5'd0;
+	else
+		count <= count + 1; 
 end 
 
 assign AnalogClock = (count==0);
@@ -191,49 +194,48 @@ module increment_x(x_increment_result, x, y, sigma, dt);
 // Stores the value of dt dot dx/dt
 output signed [26:0] x_increment_result;
 input signed [26:0] x, y, sigma, dt;
-wire signed [26:0] xy_difference, dx_dt;
+wire signed [26:0] xy_difference, dt_scaled_diff, dx_dt;
 
 assign xy_difference = y - x;
 
-// Computes the value of dx/dt
-signed_mult mult_sigma (
-	.out(dx_dt),
-	.a(sigma),
-	.b(xy_difference)
+// Multiplies (x-y) with dt first to avoid overflow error
+signed_mult mult_dt_first (
+    .out(dt_scaled_diff),
+    .a(dt),
+    .b(xy_difference)
 );
 
-signed_mult mult_dt_x (
-	.out(x_increment_result),
-	.a(dx_dt),
-	.b(dt)
+signed_mult mult_sigma (
+    .out(x_increment_result),
+    .a(sigma),
+    .b(dt_scaled_diff)
 );
 endmodule
 
 /////////////////////////////////////////////////
 //// Compute dy/dt///////////////////////////////
 /////////////////////////////////////////////////
-
 module increment_y(y_increment_result, x, y, z, rho, dt);
 // Stores the value of dt dot dy/dt
 output signed [26:0] y_increment_result;
 input signed [26:0] x, y, z, rho, dt;
-wire signed [26:0] rho_z_difference, x_multiplied, dy_dt;
+wire signed [26:0] rho_z_difference, x_multiplied, dy_dt, dt_scaled_dy;
 
 assign rho_z_difference = rho - z;
 
 signed_mult mult_x_rho_z (
-	.out(x_multiplied),
-	.a(x),
-	.b(rho_z_difference)
+    .out(x_multiplied),
+    .a(x),
+    .b(rho_z_difference)
 );
 
 // Computes the value of dy/dt
 assign dy_dt = x_multiplied - y;
 
-signed_mult mult_dt_y (
-	.out(y_increment_result),
-	.a(dy_dt),
-	.b(dt)
+signed_mult mult_dt (
+    .out(y_increment_result),
+    .a(dt),
+    .b(dy_dt)
 );
 endmodule
 
@@ -245,26 +247,26 @@ module increment_z(z_increment_result, x, y, z, beta, dt);
 // Stores the value of dt dot dz/dt
 output signed [26:0] z_increment_result;
 input signed [26:0] x, y, z, beta, dt;
-wire signed [26:0] xy_result, beta_z_result, dz_dt; 
+wire signed [26:0] xy_result, beta_z_result, dz_dt, dt_scaled_dz; 
 
 signed_mult mult_xy (
-	.out(xy_result),
-	.a(x),
-	.b(y)
+    .out(xy_result),
+    .a(x),
+    .b(y)
 );
 
 signed_mult mult_beta_z (
-	.out(beta_z_result),
-	.a(beta),
-	.b(z)
+    .out(beta_z_result),
+    .a(beta),
+    .b(z)
 );
 
 // Computes the value of dz/dt
 assign dz_dt = xy_result - beta_z_result;
 
-signed_mult mult_dt_z (
-	.out(z_increment_result),
-	.a(dz_dt),
-	.b(dt)
+signed_mult mult_dt (
+    .out(z_increment_result),
+    .a(dt),
+    .b(dz_dt)
 );
 endmodule
