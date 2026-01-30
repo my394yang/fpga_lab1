@@ -22,10 +22,8 @@ module testbench();
 	//Initialize and drive signals
 	initial begin
 		reset  = 1'b0;
-		#10 
+		#40 
 		reset  = 1'b1;
-		#30
-		reset  = 1'b0;
 	end
 	
 	//Increment index
@@ -58,15 +56,15 @@ wire signed [26:0] sigma, rho, beta;
 wire signed [26:0] dt;
 
 // Initial condition integers of -1, 0.1 and 25 converted to 7.20 fixed point convention
-assign x_init = -27'd1048576;
-assign y_init = 27'd104858;
-assign z_init = 27'd26214400; 
-assign dt = 27'd4096;
+assign x_init = -27'sb0000001_00000000000000000000;
+assign y_init =  27'sb0000000_00011001100110011001;
+assign z_init =  27'sb0011001_00000000000000000000;
+assign dt = 27'sb0000000_00000001000000000000;
 
 // Constants
-assign sigma = 27'd10485760;
-assign rho   = 27'd29360128;
-assign beta  = 27'd2796203;
+assign sigma = 27'sb0001010_00000000000000000000;
+assign rho   = 27'sb0011100_00000000000000000000;
+assign beta  = 27'sb0000010_10101010101010101011;
 
 // Increments (outputs from derivative modules)
 wire signed [26:0] x_inc, y_inc, z_inc;
@@ -147,6 +145,7 @@ integrator integrate_z (
 
 endmodule
 
+
 /////////////////////////////////////////////////
 //// integrator /////////////////////////////////
 /////////////////////////////////////////////////
@@ -215,28 +214,25 @@ endmodule
 /////////////////////////////////////////////////
 //// Compute dy/dt///////////////////////////////
 /////////////////////////////////////////////////
+
 module increment_y(y_increment_result, x, y, z, rho, dt);
 // Stores the value of dt dot dy/dt
 output signed [26:0] y_increment_result;
 input signed [26:0] x, y, z, rho, dt;
-wire signed [26:0] rho_z_difference, x_multiplied, dy_dt, dt_scaled_dy;
+wire signed [26:0] rho_minus_z_scaled, x_times_scaled_term;
 
-assign rho_z_difference = rho - z;
+// Scales (rho - z) by dt first
+assign rho_minus_z_scaled = (rho - z) >>> 8;
 
-signed_mult mult_x_rho_z (
-    .out(x_multiplied),
+// Computes x * dt * (rho - z)
+signed_mult mult_x_term (
+    .out(x_times_scaled_term),
     .a(x),
-    .b(rho_z_difference)
+    .b(rho_minus_z_scaled)
 );
 
-// Computes the value of dy/dt
-assign dy_dt = x_multiplied - y;
+assign y_increment_result = x_times_scaled_term - (y >>> 8);
 
-signed_mult mult_dt (
-    .out(y_increment_result),
-    .a(dt),
-    .b(dy_dt)
-);
 endmodule
 
 /////////////////////////////////////////////////
@@ -247,26 +243,26 @@ module increment_z(z_increment_result, x, y, z, beta, dt);
 // Stores the value of dt dot dz/dt
 output signed [26:0] z_increment_result;
 input signed [26:0] x, y, z, beta, dt;
-wire signed [26:0] xy_result, beta_z_result, dz_dt, dt_scaled_dz; 
+wire signed [26:0] x_scaled, xy_scaled_result, beta_z_scaled;
 
-signed_mult mult_xy (
-    .out(xy_result),
-    .a(x),
+// Scales x by dt first to prevent overflow
+assign x_scaled = x >>> 8;
+
+// Computes dt*x*y
+signed_mult mult_xy_scaled (
+    .out(xy_scaled_result),
+    .a(x_scaled),
     .b(y)
 );
 
+// Computes dt*beta*z
 signed_mult mult_beta_z (
-    .out(beta_z_result),
-    .a(beta),
+    .out(beta_z_scaled),
+    .a(beta >>> 8),
     .b(z)
 );
 
-// Computes the value of dz/dt
-assign dz_dt = xy_result - beta_z_result;
+assign z_increment_result = xy_scaled_result - beta_z_scaled;
 
-signed_mult mult_dt (
-    .out(z_increment_result),
-    .a(dt),
-    .b(dz_dt)
-);
 endmodule
+
